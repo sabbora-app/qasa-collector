@@ -370,7 +370,7 @@ function viewHome(root){
     <div class="search">${IC.search}<input id="q" type="search" placeholder="ابحث بالاسم أو الماركة أو الباركود"></div>
     <div id="results"></div>
     <div id="cats">
-      <h2>التصنيفات</h2>
+      <div class="row"><h2 class="grow">التصنيفات</h2><button class="btn sm" id="homeAddCat">${IC.plus}تصنيف</button></div>
       <div class="catgrid">
         ${S.cats.map(c=>`<div class="cat glass" data-c="${c.id}"><b>${esc(c.name)}</b><span><span class="num">${countIn(c.id)}</span> صنف · <span class="num">${c.subs.length}</span> فرعي</span></div>`).join('')}
         ${unc?`<div class="cat glass" data-c="__none"><b>بدون تصنيف</b><span><span class="num">${unc}</span> صنف</span></div>`:''}
@@ -380,6 +380,8 @@ function viewHome(root){
     const c=el.dataset.c; if(c==='__none') go('sub',{cid:'__none'}); else go('cat',{cid:c});
   });
   const g=root.querySelector('#goExp'); if(g) g.onclick=()=>go('settings');
+  root.querySelector('#homeAddCat').onclick=async()=>{ const n=await ask('تصنيف رئيسي جديد'); if(!n) return;
+    if(!S.cats.some(c=>c.name===n)){ S.cats.push({id:uid(),name:n,subs:[]}); await saveMeta('cats'); } render(); };
   const q=root.querySelector('#q');
   q.oninput=()=>{
     const s=q.value.trim().toLowerCase();
@@ -398,7 +400,9 @@ function viewCat(root,{cid}){
       ${c.subs.map(s=>`<div class="cat glass" data-s="${s.id}"><b>${esc(s.name)}</b><span><span class="num">${countIn(cid,s.id)}</span> صنف</span></div>`).join('')}
       ${noSub?`<div class="cat glass" data-s="__none"><b>بدون تصنيف فرعي</b><span><span class="num">${noSub}</span> صنف</span></div>`:''}
     </div>
-    <div class="muted" style="margin-top:12px">اختيار تصنيف فرعي يجعله الافتراضي للمسح التالي.</div>`;
+    <div class="row" style="margin-top:12px"><div class="muted grow">اختيار تصنيف فرعي يجعله الافتراضي للمسح التالي.</div><button class="btn sm" id="catAddSub">${IC.plus}فرعي</button></div>`;
+  root.querySelector('#catAddSub').onclick=async()=>{ const n=await ask(`تصنيف فرعي جديد في «${c.name}»`); if(!n) return;
+    if(!c.subs.some(s=>s.name===n)){ c.subs.push({id:uid(),name:n}); await saveMeta('cats'); } render(); };
   root.querySelectorAll('.cat').forEach(el=>el.onclick=async()=>{
     const sid=el.dataset.s;
     if(sid!=='__none'){ S.set.lastCat=cid; S.set.lastSub=sid; await saveMeta('set'); }
@@ -466,7 +470,7 @@ function viewForm(root,{barcode}){
         <div class="field"><label>الوحدة</label><select id="f_unit">${UNITS.map(u=>`<option ${u===it.unit?'selected':''}>${u}</option>`).join('')}</select></div>
       </div>
       <div class="two">
-        <div class="field"><label>التصنيف الرئيسي</label><select id="f_cat"><option value="">— اختر —</option>${S.cats.map(c=>`<option value="${c.id}" ${c.id===it.catId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>التصنيف الرئيسي</label><select id="f_cat"></select></div>
         <div class="field"><label>التصنيف الفرعي</label><select id="f_sub"></select></div>
       </div>
       <div class="two">
@@ -483,11 +487,30 @@ function viewForm(root,{barcode}){
       <button class="btn ok grow" id="saveOnly">حفظ</button>
       ${ex?'<button class="btn bad" id="delItem">'+IC.del+'حذف</button>':''}
     </div>`;
+  const NEW='__new__';
+  const fillCats=()=>{
+    $('#f_cat').innerHTML='<option value="">— اختر —</option>'+S.cats.map(c=>`<option value="${c.id}" ${c.id===it.catId?'selected':''}>${esc(c.name)}</option>`).join('')+`<option value="${NEW}">＋ إضافة تصنيف رئيسي جديد…</option>`;
+  };
   const fillSubs=()=>{
     const c=S.cats.find(c=>c.id===$('#f_cat').value);
-    $('#f_sub').innerHTML='<option value="">— اختر —</option>'+(c?c.subs.map(s=>`<option value="${s.id}" ${s.id===it.subId?'selected':''}>${esc(s.name)}</option>`).join(''):'');
+    $('#f_sub').innerHTML='<option value="">— اختر —</option>'+(c?c.subs.map(s=>`<option value="${s.id}" ${s.id===it.subId?'selected':''}>${esc(s.name)}</option>`).join('')+`<option value="${NEW}">＋ إضافة تصنيف فرعي جديد…</option>`:'');
   };
-  fillSubs(); $('#f_cat').onchange=()=>{ it.subId=null; fillSubs(); };
+  fillCats(); fillSubs();
+  $('#f_cat').onchange=async()=>{
+    if($('#f_cat').value===NEW){
+      const n=await ask('اسم التصنيف الرئيسي الجديد','',{ph:'مثال: مستلزمات حلاقة'});
+      if(n){ const ex=S.cats.find(c=>c.name===n); const c=ex||{id:uid(),name:n,subs:[]}; if(!ex){ S.cats.push(c); await saveMeta('cats'); } it.catId=c.id; }
+      it.subId=null; fillCats(); fillSubs(); return;
+    }
+    it.catId=$('#f_cat').value||null; it.subId=null; fillSubs();
+  };
+  $('#f_sub').onchange=async()=>{
+    if($('#f_sub').value!==NEW){ it.subId=$('#f_sub').value||null; return; }
+    const c=S.cats.find(c=>c.id===$('#f_cat').value); if(!c){ fillSubs(); return; }
+    const n=await ask(`تصنيف فرعي جديد في «${c.name}»`,'',{ph:'مثال: جل شعر'});
+    if(n){ const ex=c.subs.find(s=>s.name===n); const s=ex||{id:uid(),name:n}; if(!ex){ c.subs.push(s); await saveMeta('cats'); } it.subId=s.id; }
+    fillSubs();
+  };
   const price=$('#f_price');
   price.oninput=()=>{ const d=price.value.replace(/[^\d]/g,''); price.value=d?fmt(d):''; };
   const showPhoto=async()=>{
