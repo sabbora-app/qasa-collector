@@ -107,7 +107,7 @@ pre{white-space:pre-wrap;direction:rtl;font-size:13px;background:#fff;border:1px
   <div class="st sm"><b id="sFps">—</b><span>إطار/ثانية</span></div>
 </div>
 
-<div class="list" id="list"><div class="empty">القائمة فارغة.<br>كل منتج يُقرأ يظهر هنا.<br>لإضافة قطعة ثانية من نفس المنتج: اضغط + أو أبعِد المنتج عن الكاميرا ثم أرجعه.</div></div>
+<div class="list" id="list"><div class="empty">القائمة فارغة.<br>كل منتج يُقرأ يظهر هنا. اضغط على المنتج لكتابة اسمه وسعره.<br>لإضافة قطعة ثانية من نفس المنتج: اضغط + أو أبعِد المنتج عن الكاميرا ثم أرجعه.</div></div>
 <div class="tot" id="totBox" style="display:none"><span>المجموع</span><b id="tot">0</b></div>
 
 <div class="bar">
@@ -176,8 +176,12 @@ function openCollector(){
     }catch(e){res()}
   });
 }
+let NAMES={};
+try{NAMES=JSON.parse(localStorage.getItem('qasa-lab-names')||'{}')}catch(e){}
+function saveNames(){try{localStorage.setItem('qasa-lab-names',JSON.stringify(NAMES))}catch(e){}}
 function lookup(code){
   return new Promise(res=>{
+    if(NAMES[code]) return res(NAMES[code]);
     if(!colDB) return res(null);
     try{const g=colDB.transaction('items','readonly').objectStore('items').get(code);
       g.onsuccess=()=>res(g.result||null);g.onerror=()=>res(null);}catch(e){res(null)}
@@ -338,11 +342,32 @@ function renderList(flash){
   $('#totBox').style.display=sum?'flex':'none';$('#tot').textContent=fmt(sum);
 }
 $('#list').addEventListener('click',e=>{
-  const b=e.target.closest('button');if(!b)return;
+  const b=e.target.closest('button');
+  if(!b){const r=e.target.closest('.row');if(r)editItem(r.dataset.c);return}
   const c=b.closest('.row').dataset.c,i=lines.findIndex(l=>l.code===c);if(i<0)return;
   if(b.dataset.a==='p')lines[i].qty++;else{lines[i].qty--;if(lines[i].qty<=0)lines.splice(i,1)}
   lastActivity=performance.now();renderList();
 });
+
+function editItem(code){
+  const ln=lines.find(l=>l.code===code);if(!ln)return;
+  const nm=ln.name==='صنف غير معروف'?'':ln.name;
+  sheet(`<h2>تعريف المنتج</h2><p style="direction:ltr;text-align:right;color:var(--muted);margin:0 0 6px">${code}</p>
+  <div class="fld"><label>الاسم</label><input id="eN" value="${esc(nm)}" placeholder="مثال: بيبسي 330 مل" style="width:100%;height:48px;border-radius:12px;border:1px solid var(--line);padding:0 12px;font-size:17px"></div>
+  <div class="fld"><label>السعر (دينار)</label><input id="eP" inputmode="numeric" value="${ln.price||''}" placeholder="مثال: 750" style="width:100%;height:48px;border-radius:12px;border:1px solid var(--line);padding:0 12px;font-size:17px;direction:ltr;text-align:right"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+  <button class="btn" id="eX">إلغاء</button><button class="btn pri" id="eS">حفظ</button></div>`,p=>{
+    setTimeout(()=>p.querySelector('#eN').focus(),150);
+    p.querySelector('#eX').onclick=closeSheet;
+    p.querySelector('#eS').onclick=()=>{
+      const n=p.querySelector('#eN').value.trim(),pr=+(p.querySelector('#eP').value.replace(/[^\d]/g,''))||0;
+      if(!n){toast('اكتب الاسم');return}
+      NAMES[code]={name:n,price:pr};saveNames();
+      lines.forEach(l=>{if(l.code===code){l.name=n;l.price=pr}});
+      closeSheet();renderList();toast('تم الحفظ — سيظهر الاسم في المسح القادم');
+    };
+  });
+}
 
 /* ============ الأزرار ============ */
 $('#startBtn').onclick=startCam;
