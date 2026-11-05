@@ -50,6 +50,10 @@ header h1{font-size:17px;margin:0;flex:1}
 .row .nm{flex:1;min-width:0}
 .row .nm b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row .nm small{color:var(--muted);direction:ltr;display:inline-block}
+.row .nm .src{font-style:normal;font-size:10.5px;color:#fff;border-radius:999px;padding:1px 7px;margin-inline-start:6px;vertical-align:1px}
+.offbox{background:#f3efff;border:1px solid #d9ccff;border-radius:12px;padding:8px 10px;font-size:14px;line-height:1.7}
+.offbox small{display:block;color:var(--muted);font-size:11.5px}
+.offbox button{margin-top:6px;height:36px;border-radius:10px;border:1px solid #c4b3ff;background:#fff;font-size:13px;padding:0 12px}
 .q{display:flex;align-items:center;gap:4px}
 .q button{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:20px}
 .q b{min-width:26px;text-align:center;font-size:17px}
@@ -107,7 +111,7 @@ pre{white-space:pre-wrap;direction:rtl;font-size:13px;background:#fff;border:1px
   <div class="st sm"><b id="sFps">—</b><span>إطار/ثانية</span></div>
 </div>
 
-<div class="list" id="list"><div class="empty">القائمة فارغة.<br>كل منتج يُقرأ يظهر هنا. اضغط على المنتج لكتابة اسمه وسعره.<br>لإضافة قطعة ثانية من نفس المنتج: اضغط + أو أبعِد المنتج عن الكاميرا ثم أرجعه.</div></div>
+<div class="list" id="list"><div class="empty">القائمة فارغة.<br>كل منتج يُقرأ يظهر هنا. اضغط على المنتج لكتابة اسمه وسعر المفرد.<br>إن لم يكن محفوظاً يُبحث عنه في Open Food Facts (يحتاج إنترنت).<br>لإضافة قطعة ثانية من نفس المنتج: اضغط + أو أبعِد المنتج عن الكاميرا ثم أرجعه.</div></div>
 <div class="tot" id="totBox" style="display:none"><span>المجموع</span><b id="tot">0</b></div>
 
 <div class="bar">
@@ -179,14 +183,67 @@ function openCollector(){
 let NAMES={};
 try{NAMES=JSON.parse(localStorage.getItem('qasa-lab-names')||'{}')}catch(e){}
 function saveNames(){try{localStorage.setItem('qasa-lab-names',JSON.stringify(NAMES))}catch(e){}}
-function lookup(code){
+function lookup(code){ // المحلي فقط: أسمائي ثم أداة الجمع
   return new Promise(res=>{
-    if(NAMES[code]) return res(NAMES[code]);
+    if(NAMES[code]) return res(Object.assign({src:'mine'},NAMES[code]));
     if(!colDB) return res(null);
     try{const g=colDB.transaction('items','readonly').objectStore('items').get(code);
-      g.onsuccess=()=>res(g.result||null);g.onerror=()=>res(null);}catch(e){res(null)}
+      g.onsuccess=()=>res(g.result?Object.assign({src:'col'},g.result):null);g.onerror=()=>res(null);}catch(e){res(null)}
   });
 }
+
+/* ============ Open Food Facts (عبر الإنترنت، مع حفظ النتيجة على الهاتف) ============ */
+// الترتيب: أغذية ← كوزمتك ← غير غذائي. المصدر: Open Food Facts (ترخيص ODbL).
+const OFF_DBS=[['openfoodfacts','أغذية'],['openbeautyfacts','كوزمتك'],['openproductsfacts','غير غذائي']];
+const OFF_FIELDS='product_name,product_name_ar,product_name_en,generic_name,brands,quantity';
+const MISS_TTL=24*3600*1000; // غير الموجود يُعاد فحصه بعد يوم
+let OFFC={};
+try{OFFC=JSON.parse(localStorage.getItem('qasa-lab-off')||'{}')}catch(e){}
+function saveOFFC(){try{localStorage.setItem('qasa-lab-off',JSON.stringify(OFFC))}catch(e){}}
+const offPending={};
+function offCached(code){
+  const c=OFFC[code];if(!c)return undefined;
+  if(c.miss&&Date.now()-c.t>MISS_TTL)return undefined;
+  return c;
+}
+function offTitle(o){
+  if(!o||o.miss)return '';
+  let t=o.name||'';
+  const br=(o.brand||'').split(',')[0].trim();
+  if(br&&!t.toLowerCase().includes(br.toLowerCase()))t=t?t+' — '+br:br;
+  if(o.qty&&!t.includes(o.qty))t+=' '+o.qty;
+  return t.trim();
+}
+async function fetchTO(url,ms){
+  const ac2=new AbortController();const h=setTimeout(()=>ac2.abort(),ms);
+  try{return await fetch(url,{signal:ac2.signal,cache:'no-store'})}finally{clearTimeout(h)}
+}
+function offLookup(code){ // يرجع {name,brand,qty,db} أو {miss} أو {offline}
+  const c=offCached(code);if(c)return Promise.resolve(c);
+  if(offPending[code])return offPending[code];
+  offPending[code]=(async()=>{
+    if(!navigator.onLine)return {offline:true};
+    let anyOk=false;
+    for(const [host,label] of OFF_DBS){
+      try{
+        const r=await fetchTO(`https://world.${host}.org/api/v2/product/${code}.json?fields=${OFF_FIELDS}`,6000);
+        if(r.status===404){anyOk=true;continue} // OFF يرد 404 للمنتج غير الموجود
+        if(!r.ok)continue;anyOk=true;
+        const j=await r.json();
+        if(j.status===1&&j.product){
+          const p=j.product;
+          const name=(p.product_name_ar||p.product_name||p.product_name_en||p.generic_name||'').trim();
+          const o={name,brand:(p.brands||'').trim(),qty:(p.quantity||'').trim(),db:label,t:Date.now()};
+          OFFC[code]=o;saveOFFC();return o;
+        }
+      }catch(e){}
+    }
+    if(!anyOk)return {offline:true};
+    const m={miss:true,t:Date.now()};OFFC[code]=m;saveOFFC();return m;
+  })().finally(()=>{delete offPending[code]});
+  return offPending[code];
+}
+const BADGE={mine:['محفوظ','#12a150'],col:['أداة الجمع','#0e7490'],off:['OFF','#7b4dff'],none:['غير موجود','#8a96a8'],wait:['يبحث…','#e08a00'],offline:['بلا إنترنت','#d93a3a']};
 
 /* ============ الصوت والاهتزاز ============ */
 let ac=null;
@@ -318,12 +375,32 @@ async function accept(code,confirmMs,now){
   if(ln){ln.qty++}
   else{
     const it=await lookup(code);
-    ln={code,name:it&&it.name?it.name:'صنف غير معروف',price:it&&+it.price||0,qty:1};lines.unshift(ln);
+    ln={code,name:it&&it.name?it.name:'صنف غير معروف',price:it&&+it.price||0,qty:1,
+        src:it&&it.name?it.src:'wait',off:undefined,offData:null};
+    lines.unshift(ln);
+    checkOFF(ln);
   }
   $('#lastName').textContent=ln.name+(ln.qty>1?' ×'+ln.qty:'');$('#lastCode').textContent=code;
   const l=$('#last');l.classList.add('show');clearTimeout(l._h);l._h=setTimeout(()=>l.classList.remove('show'),1800);
   renderList(code);renderStats();
 }
+
+// يُفحص كل منتج في OFF (حتى المحفوظ عندي) لقياس التغطية، والاسم يُستخدم فقط إن لم يكن له اسم محلي
+async function checkOFF(ln){
+  const o=await offLookup(ln.code);
+  if(o.offline){ln.off=null;if(ln.src==='wait')ln.src='offline'}
+  else if(o.miss){ln.off=false;if(ln.src==='wait')ln.src='none'}
+  else{
+    ln.off=true;ln.offData=o;
+    if(ln.src==='wait'){const t=offTitle(o);if(t){ln.name=t;ln.src='off'}else ln.src='none'}
+  }
+  renderList();
+  if(lines[0]===ln){$('#lastName').textContent=ln.name+(ln.qty>1?' ×'+ln.qty:'')}
+}
+function retryOffline(){
+  lines.forEach(l=>{if(l.off===null||l.src==='offline'){if(l.src==='offline')l.src='wait';l.off=undefined;checkOFF(l)}});
+}
+window.addEventListener('online',retryOffline);
 
 /* ============ العرض ============ */
 function renderStats(){
@@ -335,9 +412,9 @@ function renderStats(){
 function renderList(flash){
   const L=$('#list');
   if(!lines.length){L.innerHTML='<div class="empty">القائمة فارغة.</div>';$('#totBox').style.display='none';return}
-  L.innerHTML=lines.map(l=>`<div class="row${l.code===flash?' new':''}" data-c="${l.code}">
-    <div class="nm"><b>${esc(l.name)}</b><small>${l.code}${l.price?' · '+fmt(l.price):''}</small></div>
-    <div class="q"><button data-a="m">−</button><b>${l.qty}</b><button data-a="p">+</button></div></div>`).join('');
+  L.innerHTML=lines.map(l=>{const bd=BADGE[l.src]||BADGE.none;return `<div class="row${l.code===flash?' new':''}" data-c="${l.code}">
+    <div class="nm"><b>${esc(l.name)}</b><small>${l.code}${l.price?' · '+fmt(l.price):''}</small><i class="src" style="background:${bd[1]}">${bd[0]}</i></div>
+    <div class="q"><button data-a="m">−</button><b>${l.qty}</b><button data-a="p">+</button></div></div>`}).join('');
   const sum=lines.reduce((a,l)=>a+l.price*l.qty,0);
   $('#totBox').style.display=sum?'flex':'none';$('#tot').textContent=fmt(sum);
 }
@@ -352,19 +429,27 @@ $('#list').addEventListener('click',e=>{
 function editItem(code){
   const ln=lines.find(l=>l.code===code);if(!ln)return;
   const nm=ln.name==='صنف غير معروف'?'':ln.name;
+  const o=ln.offData,ot=offTitle(o);
+  const offHtml=ln.off===true?`<div class="offbox"><small>الاسم في Open Food Facts (قاعدة ${esc(o.db)}):</small><b>${esc(ot)}</b>
+      ${o.brand?`<small>الماركة: ${esc(o.brand)}</small>`:''}${o.qty?`<small>الحجم: ${esc(o.qty)}</small>`:''}
+      ${ln.src==='mine'?`<button id="eU">استخدم هذا الاسم</button>`:''}</div>`
+    :ln.off===false?`<div class="offbox"><small>غير موجود في Open Food Facts — اكتب الاسم بنفسك.</small></div>`
+    :ln.off===null?`<div class="offbox"><small>لم يُفحص في Open Food Facts (لا يوجد إنترنت).</small></div>`:'';
   sheet(`<h2>تعريف المنتج</h2><p style="direction:ltr;text-align:right;color:var(--muted);margin:0 0 6px">${code}</p>
-  <div class="fld"><label>الاسم</label><input id="eN" value="${esc(nm)}" placeholder="مثال: بيبسي 330 مل" style="width:100%;height:48px;border-radius:12px;border:1px solid var(--line);padding:0 12px;font-size:17px"></div>
-  <div class="fld"><label>السعر (دينار)</label><input id="eP" inputmode="numeric" value="${ln.price||''}" placeholder="مثال: 750" style="width:100%;height:48px;border-radius:12px;border:1px solid var(--line);padding:0 12px;font-size:17px;direction:ltr;text-align:right"></div>
+  ${offHtml}
+  <div class="fld"><label>الاسم (صحّحه كما تحب)</label><input id="eN" value="${esc(nm)}" placeholder="مثال: بيبسي 330 مل" style="width:100%;height:48px;border-radius:12px;border:1px solid var(--line);padding:0 12px;font-size:17px"></div>
+  <div class="fld"><label>سعر المفرد (دينار)</label><input id="eP" inputmode="numeric" value="${ln.price||''}" placeholder="مثال: 750" style="width:100%;height:48px;border-radius:12px;border:1px solid var(--line);padding:0 12px;font-size:17px;direction:ltr;text-align:right"></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
   <button class="btn" id="eX">إلغاء</button><button class="btn pri" id="eS">حفظ</button></div>`,p=>{
-    setTimeout(()=>p.querySelector('#eN').focus(),150);
+    setTimeout(()=>p.querySelector(nm?'#eP':'#eN').focus(),150);
     p.querySelector('#eX').onclick=closeSheet;
+    const u=p.querySelector('#eU');if(u)u.onclick=()=>{p.querySelector('#eN').value=ot};
     p.querySelector('#eS').onclick=()=>{
       const n=p.querySelector('#eN').value.trim(),pr=+(p.querySelector('#eP').value.replace(/[^\d]/g,''))||0;
       if(!n){toast('اكتب الاسم');return}
       NAMES[code]={name:n,price:pr};saveNames();
-      lines.forEach(l=>{if(l.code===code){l.name=n;l.price=pr}});
-      closeSheet();renderList();toast('تم الحفظ — سيظهر الاسم في المسح القادم');
+      lines.forEach(l=>{if(l.code===code){l.name=n;l.price=pr;l.src='mine'}});
+      closeSheet();renderList();toast('تم الحفظ على هاتفك — صدّر نسخة من الإعدادات بين حين وآخر');
     };
   });
 }
@@ -395,7 +480,13 @@ function seg(key,opts){return `<div class="seg" data-k="${key}">${opts.map(([v,t
 
 $('#setBtn').onclick=()=>{
   const zoomOk=caps&&caps.zoom;
+  const nNames=Object.keys(NAMES).length;
   sheet(`<h2>الإعدادات</h2>
+  <div class="fld"><label>أسمائي وأسعاري <span class="val">${fmt(nNames)} صنف</span></label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <button class="btn" id="expBtn">⬆️ تصدير نسخة</button><button class="btn" id="impBtn">⬇️ استيراد</button></div>
+    <input type="file" id="impFile" accept=".json,application/json" style="display:none">
+    <small>محفوظة على هذا الهاتف داخل المتصفح. مسح بيانات المتصفح يحذفها، فاحتفظ بنسخة مصدّرة. الاستيراد يضيف الأصناف ويحدّث الموجود منها.</small></div>
   <div class="fld"><label>محرك القراءة</label>${seg('engine',[['auto','تلقائي'],['native','محرك الهاتف'],['zxing','ZXing']])}
     <small>محرك الهاتف أسرع بكثير. ZXing احتياطي للمتصفحات التي لا تدعمه.</small></div>
   <div class="fld"><label>عدد مرات التأكيد</label>${seg('confirm',[[1,'مرة'],[2,'مرتان'],[3,'ثلاث']])}
@@ -416,6 +507,9 @@ $('#setBtn').onclick=()=>{
   <button class="btn" style="width:100%;margin-top:6px" id="defBtn">إرجاع القيم الافتراضية</button>
   <button class="btn pri" style="width:100%;margin-top:8px" id="okBtn">تم</button>`,p=>{
     let restart=false;
+    p.querySelector('#expBtn').onclick=exportNames;
+    p.querySelector('#impBtn').onclick=()=>p.querySelector('#impFile').click();
+    p.querySelector('#impFile').onchange=e=>{const f=e.target.files[0];if(f)importNames(f)};
     p.querySelectorAll('.seg').forEach(sg=>sg.addEventListener('click',e=>{
       const b=e.target.closest('button');if(!b)return;const k=sg.dataset.k;let v=b.dataset.v;
       v=v==='true'?true:v==='false'?false:(isNaN(+v)?v:+v);S[k]=v;saveS();
@@ -431,11 +525,53 @@ $('#setBtn').onclick=()=>{
   });
 };
 
+/* ============ تصدير واستيراد أسمائي وأسعاري ============ */
+async function exportNames(){
+  const n=Object.keys(NAMES).length;if(!n){toast('لا توجد أسماء محفوظة بعد');return}
+  const d=new Date(),day=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const data={app:'qasa-lab',kind:'names',version:1,exported:d.toISOString(),count:n,items:NAMES};
+  const name=`qasa-lab-names-${day}.json`;
+  const blob=new Blob([JSON.stringify(data,null,1)],{type:'application/json'});
+  try{
+    const file=new File([blob],name,{type:'application/json'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:name});return}
+  }catch(e){if(e&&e.name==='AbortError')return}
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
+  document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);
+  toast('تم التصدير: '+fmt(n)+' صنف');
+}
+function importNames(f){
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const j=JSON.parse(r.result);
+      const items=j&&j.app==='qasa-lab'&&j.items?j.items:null;
+      if(!items){toast('الملف ليس نسخة من أسماء المختبر');return}
+      let add=0,upd=0;
+      for(const [code,v] of Object.entries(items)){
+        if(!/^\d{8,14}$/.test(code)||!v||!v.name)continue;
+        if(NAMES[code])upd++;else add++;
+        NAMES[code]={name:String(v.name),price:+v.price||0};
+      }
+      saveNames();
+      lines.forEach(l=>{if(NAMES[l.code]){l.name=NAMES[l.code].name;l.price=NAMES[l.code].price;l.src='mine'}});
+      renderList();closeSheet();toast(`تم الاستيراد: ${add} جديد، ${upd} محدَّث`);
+    }catch(e){toast('تعذّر قراءة الملف')}
+  };
+  r.readAsText(f);
+}
+
 /* ============ التقرير ============ */
 function report(){
   const ua=navigator.userAgent;
   const dur=T.t0?((performance.now()-T.t0)/1000).toFixed(0):'0';
-  const lines2=lines.map(l=>`  ${l.code} × ${l.qty}  ${l.name}`).join('\n')||'  (لا يوجد)';
+  const offMark=l=>l.off===true?'OFF ✓':l.off===false?'OFF ✗':'OFF ؟';
+  const lines2=lines.map(l=>`  ${l.code} × ${l.qty}  ${l.name}${l.price?' · '+fmt(l.price):''}  [${offMark(l)}]`).join('\n')||'  (لا يوجد)';
+  const yes=lines.filter(l=>l.off===true).length,no=lines.filter(l=>l.off===false).length,unk=lines.length-yes-no;
+  const cov=yes+no?Math.round(100*yes/(yes+no)):0;
+  const ar=lines.filter(l=>l.off===true&&/[؀-ۿ]/.test((l.offData&&l.offData.name)||'')).length;
+  const covTxt=`تغطية Open Food Facts: ${yes} من ${yes+no} (${cov}%)`+(unk?` | لم يُفحص: ${unk}`:'')+`
+  منها باسم بحروف عربية: ${ar} | من OFF أغذية/كوزمتك/غير غذائي: ${['أغذية','كوزمتك','غير غذائي'].map(k=>lines.filter(l=>l.off===true&&l.offData.db===k).length).join('/')}`;
   return `تقرير مختبر المسح — قاصة
 التاريخ: ${new Date().toLocaleString('en-GB')}
 الجهاز: ${ua}
@@ -448,13 +584,14 @@ function report(){
 متوسط الزمن بين منتجين: ${T.betweenN?(T.betweenSum/T.betweenN/1000).toFixed(2):'—'} ثانية
 قراءات مرفوضة (رقم تحقق خاطئ): ${T.badCheck}
 تذبذب (قراءتان مختلفتان قبل التأكيد): ${T.flicker}
+${covTxt}
 القائمة:
 ${lines2}`;
 }
 $('#repBtn').onclick=()=>{
   const r=report();
   sheet(`<h2>التقرير</h2><p style="font-size:13px;color:var(--muted);margin:0 0 8px">أرسله لـClaude لنضبط قيم قاصة على النتائج الحقيقية.</p>
-  <pre>${esc(r)}</pre>
+  <pre>${esc(r)}</pre><p style="font-size:11px;color:var(--muted);margin:6px 0 0">أسماء OFF من قاعدة Open Food Facts المفتوحة (ترخيص ODbL).</p>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
   <button class="btn" id="cpBtn">نسخ</button><button class="btn pri" id="shBtn">مشاركة</button></div>
   <button class="btn" style="width:100%;margin-top:8px" id="clsBtn">إغلاق</button>`,p=>{
