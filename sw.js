@@ -1,4 +1,4 @@
-const CACHE = 'qasa-collector-v3';
+const CACHE = 'qasa-collector-v5';
 const FILES = [
   './', './index.html', './manifest.webmanifest',
   './icon-192.png', './icon-512.png',
@@ -17,13 +17,18 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
-  e.respondWith(
-    caches.match(e.request, { ignoreSearch: true }).then(hit => {
-      if (hit) return hit;
-      return fetch(e.request).catch(() =>
-        e.request.mode === 'navigate' ? caches.match('./index.html') : undefined
-      );
-    })
-  );
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== location.origin) return;            // طلبات الإنترنت الخارجية لا تمر بالذاكرة
+  // الصفحة الرئيسية: الشبكة أولاً حتى يظهر التحديث فوراً، والذاكرة عند انقطاع الإنترنت
+  const isIndex = url.pathname.endsWith('/') || url.pathname.endsWith('/index.html');
+  if (isIndex) {
+    e.respondWith(
+      fetch(req).then(r => { const c = r.clone(); caches.open(CACHE).then(x => x.put('./index.html', c)); return r; })
+        .catch(() => caches.match('./index.html'))
+    );
+    return;
+  }
+  e.respondWith(caches.match(req, { ignoreSearch: true }).then(hit => hit || fetch(req)));
 });

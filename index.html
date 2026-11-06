@@ -124,6 +124,35 @@ h2{font-size:16px;margin:4px 0 10px}
 .muted{color:var(--t3);font-size:13px}
 .progress{height:8px;border-radius:99px;background:rgba(100,116,139,.15);overflow:hidden}
 .progress i{display:block;height:100%;background:var(--g-aurora)}
+/* الجمع الذكي */
+#smart{position:fixed;inset:0;background:#000;z-index:55;display:none;-webkit-user-select:none;user-select:none}
+#smart.on{display:block}
+#smart video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.sm-top{position:absolute;top:0;left:0;right:0;padding:12px;padding-top:calc(12px + env(safe-area-inset-top));display:flex;gap:8px;align-items:center;justify-content:space-between}
+.sm-cat{border:0;border-radius:99px;padding:9px 14px;font:inherit;font-weight:800;color:#fff;background:rgba(15,23,42,.6);max-width:62%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sm-cnt{display:flex;gap:6px;color:#fff;font-weight:800;font-size:13px}
+.sm-cnt span{background:rgba(15,23,42,.6);border-radius:99px;padding:6px 10px}
+.sm-frame{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);border-radius:18px;border:3px solid rgba(255,255,255,.92);box-shadow:0 0 0 100vmax rgba(0,0,0,.35);transition:all .25s}
+.sm-frame.bar{width:min(86vw,380px);height:min(42vw,190px)}
+.sm-frame.face{width:min(80vw,360px);height:min(100vw,440px);border-color:#FACC15}
+.sm-frame.hit{border-color:#22C55E;box-shadow:0 0 0 100vmax rgba(34,197,94,.25)}
+.sm-msg{position:absolute;left:12px;right:12px;bottom:calc(150px + env(safe-area-inset-bottom));text-align:center;color:#fff;font-weight:800;font-size:19px;text-shadow:0 2px 6px #000}
+.sm-sub{position:absolute;left:12px;right:12px;bottom:calc(126px + env(safe-area-inset-bottom));text-align:center;color:#E2E8F0;font-size:13px;text-shadow:0 1px 4px #000}
+.sm-ring{position:absolute;left:20%;right:20%;bottom:calc(112px + env(safe-area-inset-bottom));height:6px;border-radius:9px;background:rgba(255,255,255,.25);overflow:hidden}
+.sm-ring i{display:block;height:100%;width:0;background:#22C55E;transition:width .1s}
+.sm-last{position:absolute;left:50%;top:calc(70px + env(safe-area-inset-top));transform:translate(-50%,-20px);opacity:0;transition:.25s;background:rgba(255,255,255,.95);color:var(--t1);font-weight:800;padding:8px 16px;border-radius:99px;max-width:90vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sm-last.on{opacity:1;transform:translate(-50%,0)}
+.sm-last.ok{background:#DCFCE7;color:#166534}.sm-last.warn{background:#FEF3C7;color:#92400E}
+.sm-bar{position:absolute;left:0;right:0;bottom:0;padding:14px;padding-bottom:calc(14px + env(safe-area-inset-bottom));display:flex;gap:8px;justify-content:center}
+.sm-bar .btn{flex:1;max-width:160px}
+#smTorch.on{background:#FDE68A}
+.smart-card{border-radius:var(--r3);padding:16px;margin-bottom:12px;color:#fff;background:var(--g-aurora);box-shadow:0 10px 26px rgba(124,58,237,.35);cursor:pointer;display:flex;gap:12px;align-items:center}
+.smart-card b{font-size:18px;display:block}.smart-card small{opacity:.92}
+.cat.sel{outline:3px solid var(--violet)}
+.rv{border-radius:var(--r3);padding:12px;margin-bottom:10px}
+.rv.flag{border:2px solid #FACC15}
+.rv .field{margin-bottom:8px}
+.rv input,.rv select{padding:9px 10px}
 </style>
 </head>
 <body>
@@ -150,6 +179,22 @@ h2{font-size:16px;margin:4px 0 10px}
     <button class="btn ghost" id="torchBtn"><svg viewBox="0 0 24 24"><path d="M9 2h6l-1 7h4l-8 13 1-9H7z"/></svg>الإضاءة</button>
     <button class="btn ghost" id="typeBtn">كتابة الرقم</button>
     <button class="btn bad" id="closeScan">إغلاق</button>
+  </div>
+</div>
+
+<div id="smart">
+  <video id="sv" playsinline muted></video>
+  <div class="sm-frame bar" id="smFrame"></div>
+  <div class="sm-top"><button class="sm-cat" id="smCat">📦 —</button>
+    <div class="sm-cnt"><span>⏳ <b class="num" id="smWork">0</b></span><span>✓ <b class="num" id="smReady">0</b></span><span>⚠ <b class="num" id="smErr">0</b></span></div></div>
+  <div class="sm-last" id="smLast"></div>
+  <div class="sm-msg" id="smMsg"></div>
+  <div class="sm-sub" id="smSub"></div>
+  <div class="sm-ring"><i id="smRing"></i></div>
+  <div class="sm-bar">
+    <button class="btn ghost" id="smTorch">الإضاءة</button>
+    <button class="btn ghost hidden" id="smSkip">تخطي الصورة</button>
+    <button class="btn aurora" id="smDone">إنهاء ومراجعة</button>
   </div>
 </div>
 
@@ -203,12 +248,11 @@ const IC = {
 let db;
 function openDB(){
   return new Promise((res,rej)=>{
-    const r = indexedDB.open('qasa-collector',1);
+    const r = indexedDB.open('qasa-collector',2);
     r.onupgradeneeded = ()=>{
       const d = r.result;
-      d.createObjectStore('items',{keyPath:'barcode'});
-      d.createObjectStore('photos',{keyPath:'barcode'});
-      d.createObjectStore('meta',{keyPath:'key'});
+      for(const [n,k] of [['items','barcode'],['photos','barcode'],['meta','key'],['queue','barcode']])
+        if(!d.objectStoreNames.contains(n)) d.createObjectStore(n,{keyPath:k});
     };
     r.onsuccess = ()=>{db=r.result;res()};
     r.onerror = ()=>rej(r.error);
@@ -236,7 +280,8 @@ async function saveMeta(key){ await dbPut('meta',{key,value:S[key]}); }
 
 async function load(){
   await openDB();
-  const [items,keys,cats,fields,set] = await Promise.all([dbAll('items'),dbKeys('photos'),dbGet('meta','cats'),dbGet('meta','fields'),dbGet('meta','set')]);
+  const [items,keys,cats,fields,set,queue] = await Promise.all([dbAll('items'),dbKeys('photos'),dbGet('meta','cats'),dbGet('meta','fields'),dbGet('meta','set'),dbAll('queue')]);
+  queue.forEach(j=>{ if(j.status==='work') j.status='wait'; Q.set(j.barcode,j); });
   items.forEach(i=>S.items.set(i.barcode,i));
   keys.forEach(k=>S.photoKeys.add(k));
   if(cats) S.cats = cats.value;
@@ -269,8 +314,8 @@ function normalize(code){
   return code;
 }
 function internalCode(){
-  // باركود داخلي يبدأ بـ 2 للأصناف التي ليس لها باركود
-  let base; do{ base='20'+String(Date.now()).slice(-8)+String(Math.floor(Math.random()*100)).padStart(2,'0'); }
+  // باركود داخلي يبدأ بـ 29 للأصناف التي ليس لها باركود (20 إلى 28 محجوزة لموازين المحلات)
+  let base; do{ base='29'+String(Date.now()).slice(-8)+String(Math.floor(Math.random()*100)).padStart(2,'0'); }
   while(S.items.has(base+cd(base)));
   return base+cd(base);
   function cd(b){ let s=0; b.split('').reverse().forEach((x,i)=>s+=Number(x)*(i%2===0?3:1)); return (10-s%10)%10; }
@@ -339,6 +384,7 @@ function go(name,params={},push=true){
 function back(){ if(stack.length>1) history.back(); }
 window.addEventListener('popstate',()=>{
   if($('#scanner').classList.contains('on')){ stopScanner(); return; }
+  if($('#smart').classList.contains('on')){ stopSmart(); render(); return; }
   if($('#modal').classList.contains('on')){ closeModal(); history.pushState({d:stack.length},''); return; }
   if(stack.length>1){ stack.pop(); render(); } else history.pushState({d:1},'');
 });
@@ -349,9 +395,9 @@ const cur=()=>stack[stack.length-1];
 function render(){
   const v=cur(); const root=$('#view');
   $('#backBtn').classList.toggle('hidden',stack.length<=1);
-  $('#fab').classList.toggle('hidden',v.name==='form'||v.name==='settings');
+  $('#fab').classList.toggle('hidden',['form','settings','smart','review'].includes(v.name));
   window.scrollTo(0,0);
-  ({home:viewHome,cat:viewCat,sub:viewSub,form:viewForm,settings:viewSettings})[v.name](root,v.params);
+  ({home:viewHome,cat:viewCat,sub:viewSub,form:viewForm,settings:viewSettings,smart:viewSmart,review:viewReview})[v.name](root,v.params);
 }
 
 /* ================= الرئيسية ================= */
@@ -362,6 +408,9 @@ function viewHome(root){
   const unc=[...S.items.values()].filter(i=>!S.cats.some(c=>c.id===i.catId)).length;
   root.innerHTML=`
     ${S.set.sinceExport>=EXPORT_EVERY?`<div class="alert"><div class="grow"><b>حان وقت النسخ الاحتياطي</b><div class="muted">أضفت <span class="num">${S.set.sinceExport}</span> صنفاً منذ آخر تصدير.</div></div><button class="btn sm violet" id="goExp">تصدير</button></div>`:''}
+    <div class="smart-card" id="goSmart"><div style="font-size:34px">🤖</div><div class="grow"><b>الجمع الذكي</b><small>امسح الباركود وصوّر الوجه — الذكاء الاصطناعي يكتب الاسم بالعربي والإنجليزي والحجم</small></div></div>
+    ${Q.size?`<div class="alert info"><div class="grow"><b>للمراجعة: <span class="num" id="revCount">${Q.size}</span></b><div class="muted">منتجات مصوّرة بانتظار الحفظ</div></div><button class="btn sm ok" id="goRev2">مراجعة</button></div>`:''}
+    <div style="margin-bottom:10px"><span id="cloudChip" class="badge"></span></div>
     <div class="stats">
       <div class="stat glass"><b class="num">${S.items.size}</b><span>كل الأصناف</span></div>
       <div class="stat glass"><b class="num">${today}</b><span>اليوم</span></div>
@@ -380,6 +429,9 @@ function viewHome(root){
     const c=el.dataset.c; if(c==='__none') go('sub',{cid:'__none'}); else go('cat',{cid:c});
   });
   const g=root.querySelector('#goExp'); if(g) g.onclick=()=>go('settings');
+  root.querySelector('#goSmart').onclick=()=>go('smart');
+  const g2=root.querySelector('#goRev2'); if(g2) g2.onclick=()=>go('review');
+  updateCloudChip();
   root.querySelector('#homeAddCat').onclick=async()=>{ const n=await ask('تصنيف رئيسي جديد'); if(!n) return;
     if(!S.cats.some(c=>c.name===n)){ S.cats.push({id:uid(),name:n,subs:[]}); await saveMeta('cats'); } render(); };
   const q=root.querySelector('#q');
@@ -387,7 +439,7 @@ function viewHome(root){
     const s=q.value.trim().toLowerCase();
     $('#cats').classList.toggle('hidden',!!s);
     if(!s){ $('#results').innerHTML=''; return; }
-    const r=[...S.items.values()].filter(i=>(i.name||'').toLowerCase().includes(s)||(i.brand||'').toLowerCase().includes(s)||i.barcode.includes(s)).slice(0,200);
+    const r=[...S.items.values()].filter(i=>(i.name||'').toLowerCase().includes(s)||(i.nameEn||'').toLowerCase().includes(s)||(i.brand||'').toLowerCase().includes(s)||(i.brandEn||'').toLowerCase().includes(s)||i.barcode.includes(s)).slice(0,200);
     renderList($('#results'),r,`<h2>النتائج (<span class="num">${r.length}</span>)</h2>`);
   };
 }
@@ -537,7 +589,8 @@ function viewForm(root,{barcode}){
     if(pendingPhoto){ await dbPut('photos',{barcode,blob:pendingPhoto}); S.photoKeys.add(barcode); dropThumb(barcode); }
     else if(photoRemoved && S.photoKeys.has(barcode)){ await dbDel('photos',barcode); S.photoKeys.delete(barcode); dropThumb(barcode); }
     rec.hasPhoto=S.photoKeys.has(barcode);
-    await dbPut('items',rec); S.items.set(barcode,rec);
+    delete rec.cloudAt;
+    await dbPut('items',rec); S.items.set(barcode,rec); setTimeout(cloudSync,500);
     if(rec.catId){ S.set.lastCat=rec.catId; S.set.lastSub=rec.subId; }
     if(!ex) S.set.sinceExport++;
     await saveMeta('set');
@@ -552,6 +605,7 @@ function viewForm(root,{barcode}){
   const d=$('#delItem'); if(d) d.onclick=async()=>{
     if(!await confirmBox('حذف الصنف',`سيُحذف «${it.name}» وصورته نهائياً.`)) return;
     await dbDel('items',barcode); S.items.delete(barcode);
+    if(cloudOn()) api('delete',{barcode}).catch(()=>{});
     if(S.photoKeys.has(barcode)){ await dbDel('photos',barcode); S.photoKeys.delete(barcode); dropThumb(barcode); }
     toast('تم الحذف'); back();
   };
@@ -688,6 +742,7 @@ function manualEntry(){
 function viewSettings(root){
   $('#title').textContent='الإعدادات والتصدير';
   root.innerHTML=`
+    ${cloudCard()}
     <div class="card glass">
       <h2>التصدير والنسخ الاحتياطي</h2>
       <p class="muted">ملف JSON هو النسخة الاحتياطية الكاملة التي تُستورد لاحقاً في قاصة. تصديره يصفّر عدّاد التذكير.</p>
@@ -720,7 +775,7 @@ function viewSettings(root){
       <h2>التخزين</h2>
       <div id="storeInfo" class="muted">...</div>
     </div>`;
-  drawCatMgr(); drawFieldMgr(); storeInfo();
+  drawCatMgr(); drawFieldMgr(); storeInfo(); bindCloudCard();
   $('#exJson').onclick=exportJSON; $('#exXlsx').onclick=exportXLSX; $('#exZip').onclick=exportZIP;
   $('#imJson').onclick=()=>pickFile('.json,application/json',importJSON);
   $('#imZip').onclick=()=>pickFile('.zip,application/zip',importZIP);
@@ -803,13 +858,13 @@ async function exportJSON(){
   S.set.sinceExport=0; S.set.lastExportAt=Date.now(); await saveMeta('set');
 }
 function exportXLSX(){
-  const head=['الباركود','الاسم','الماركة','الحجم','الوحدة','التصنيف الرئيسي','التصنيف الفرعي','سعر المفرد','بلد المنشأ','ملاحظات','صورة',...S.fields.map(f=>f.label),'تاريخ الإضافة','آخر تعديل'];
+  const head=['الباركود','الاسم','الاسم بالإنجليزي','الماركة','Brand','الحجم','الوحدة','التصنيف الرئيسي','التصنيف الفرعي','سعر المفرد','بلد المنشأ','ملاحظات','صورة',...S.fields.map(f=>f.label),'تاريخ الإضافة','آخر تعديل'];
   const d=t=>t?new Date(t).toLocaleString('en-GB'):'';
   const rows=[...S.items.values()].sort((a,b)=>(catName(a.catId)+subName(a.catId,a.subId)+a.name).localeCompare(catName(b.catId)+subName(b.catId,b.subId)+b.name,'ar'))
-    .map(i=>[i.barcode,i.name||'',i.brand||'',i.size||'',i.unit||'',catName(i.catId),subName(i.catId,i.subId),i.price||'',i.country||'',i.notes||'',S.photoKeys.has(i.barcode)?'نعم':'لا',
+    .map(i=>[i.barcode,i.name||'',i.nameEn||'',i.brand||'',i.brandEn||'',i.size||'',i.unit||'',catName(i.catId),subName(i.catId,i.subId),i.price||'',i.country||'',i.notes||'',S.photoKeys.has(i.barcode)?'نعم':'لا',
       ...S.fields.map(f=>{ const v=(i.extra||{})[f.id]; return f.type==='number'&&v!==undefined&&!isNaN(v)?Number(v):(v??''); }),d(i.createdAt),d(i.updatedAt)]);
   const ws=XLSX.utils.aoa_to_sheet([head,...rows]);
-  ws['!cols']=head.map((h,k)=>({wch:k===0?16:k===1?28:k===9?30:14}));
+  ws['!cols']=head.map((h,k)=>({wch:k===0?16:k===1||k===2?28:k===11?30:14}));
   ws['!autofilter']={ref:`A1:${XLSX.utils.encode_col(head.length-1)}1`};
   const wb=XLSX.utils.book_new(); wb.Workbook={Views:[{RTL:true}]};
   XLSX.utils.book_append_sheet(wb,ws,'الأصناف');
@@ -877,10 +932,492 @@ async function importZIP(file){
   prog(null); toast(`تم استيراد ${ok} صورة`); render();
 }
 
+/* ================= الجمع الذكي (كاميرا + Claude) ================= */
+const Q = new Map();                       // طابور المنتجات المصوّرة
+const SENS = { fast:{n:3,m:9}, normal:{n:5,m:6}, strict:{n:7,m:4} };
+const SM = { state:'off', cat:null, stream:null, track:null, det:null, zx:null, timer:null, cand:null,
+  recent:new Map(), cur:null, t0:0, prev:null, stableN:0, barSeenAt:0, maxSharp:0, fc:0, torch:false };
+const cloudOn = ()=>!!(S.set.cloudUrl && S.set.cloudPin);
+const cvA = document.createElement('canvas'), cxA = cvA.getContext('2d',{willReadFrequently:true});
+const cvG = document.createElement('canvas'), cxG = cvG.getContext('2d',{willReadFrequently:true});
+
+/* ---------- الاتصال بالوظيفة ---------- */
+async function api(action, body={}, ms=90000){
+  if(!cloudOn()) throw new Error('اضبط رابط الوظيفة والرمز السري من الإعدادات');
+  const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),ms);
+  let r, j;
+  try{
+    r=await fetch(S.set.cloudUrl,{method:'POST',signal:ctl.signal,
+      headers:{'content-type':'application/json','x-qasa-pin':S.set.cloudPin},body:JSON.stringify({action,...body})});
+    j=await r.json().catch(()=>({}));
+  }catch(e){ throw new Error(e.name==='AbortError'?'انتهت مهلة الاتصال':'لا يوجد اتصال بالإنترنت'); }
+  finally{ clearTimeout(t); }
+  if(!r.ok || j.error) throw new Error(j.error || ('خطأ '+r.status));
+  return j;
+}
+function blobToB64(blob){
+  return new Promise((res,rej)=>{ const f=new FileReader(); f.onload=()=>res(String(f.result).split(',')[1]); f.onerror=rej; f.readAsDataURL(blob); });
+}
+async function offLookup(code){
+  try{
+    const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),7000);
+    const r=await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_ar,brands,quantity`,{signal:ctl.signal});
+    clearTimeout(t);
+    if(!r.ok) return null;                                  // 404 = غير موجود
+    const j=await r.json(); if(j.status!==1||!j.product) return null;
+    const p=j.product, name=p.product_name_ar||p.product_name||'';
+    if(!name && !p.brands) return null;
+    return {name, brand:p.brands||'', quantity:p.quantity||''};
+  }catch(e){ return null; }
+}
+
+/* ---------- الأصوات ---------- */
+let AC=null;
+function tone(f,ms,when=0){
+  try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); if(AC.state==='suspended') AC.resume();
+    const o=AC.createOscillator(), g=AC.createGain(), t=AC.currentTime+when;
+    o.type='square'; o.frequency.value=f; g.gain.setValueAtTime(.09,t); g.gain.exponentialRampToValueAtTime(.0001,t+ms/1000);
+    o.connect(g).connect(AC.destination); o.start(t); o.stop(t+ms/1000+.02); }catch(e){}
+}
+function sound(k){
+  if(k==='ok'){ tone(1600,90); vib(50); }
+  else if(k==='cap'){ tone(1900,70); tone(1900,70,.12); vib([40,40,40]); }
+  else if(k==='exists'){ tone(620,180); vib(120); }
+  else if(k==='err'){ tone(300,250); vib(200); }
+}
+function vib(p){ try{ navigator.vibrate&&navigator.vibrate(p); }catch(e){} }
+
+/* ---------- الباركود ---------- */
+function upcEtoA(e){
+  const n=e[0], d=e.slice(1,7), c=e[7], x=d[5]; let m;
+  if(x<='2') m=d[0]+d[1]+x+'0000'+d[2]+d[3]+d[4];
+  else if(x==='3') m=d[0]+d[1]+d[2]+'00000'+d[3]+d[4];
+  else if(x==='4') m=d[0]+d[1]+d[2]+d[3]+'00000'+d[4];
+  else m=d[0]+d[1]+d[2]+d[3]+d[4]+'0000'+x;
+  return n+m+c;
+}
+function normCode(raw,fmt){
+  let s=String(raw||'').replace(/\D/g,'');
+  if((fmt==='upc_e'||fmt==='UPC_E') && s.length===8) s=upcEtoA(s);
+  return normalize(s);
+}
+async function setupDetector(){
+  SM.det=null; SM.zx=null;
+  if('BarcodeDetector' in window){
+    try{ const sup=await BarcodeDetector.getSupportedFormats();
+      const f=['ean_13','ean_8','upc_a','upc_e'].filter(x=>sup.includes(x));
+      if(f.length) SM.det=new BarcodeDetector({formats:f}); }catch(e){}
+  }
+  if(!SM.det && window.ZXing){
+    const Z=window.ZXing, h=new Map();
+    h.set(Z.DecodeHintType.POSSIBLE_FORMATS,[Z.BarcodeFormat.EAN_13,Z.BarcodeFormat.EAN_8,Z.BarcodeFormat.UPC_A,Z.BarcodeFormat.UPC_E]);
+    SM.zx=new Z.MultiFormatReader(); SM.zx.setHints(h);
+  }
+  return !!(SM.det||SM.zx);
+}
+async function detectOn(canvas){
+  try{
+    if(SM.det){ const r=await SM.det.detect(canvas); return r.map(x=>({raw:x.rawValue,fmt:x.format})); }
+    const Z=window.ZXing;
+    const bmp=new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(canvas)));
+    try{ const o=SM.zx.decodeWithState(bmp); return [{raw:o.getText(),fmt:Z.BarcodeFormat[o.getBarcodeFormat()]}]; }catch(e){ return []; }
+  }catch(e){ return []; }
+}
+function drawROI(v,fw,fh,maxW){
+  const W=v.videoWidth,H=v.videoHeight, rw=W*fw, rh=H*fh, x=(W-rw)/2, y=(H-rh)/2, k=Math.min(1,maxW/rw);
+  cvA.width=Math.round(rw*k); cvA.height=Math.round(rh*k);
+  cxA.drawImage(v,x,y,rw,rh,0,0,cvA.width,cvA.height);
+  return cvA;
+}
+
+/* ---------- قياس الوضوح والثبات ---------- */
+function frameStats(v){
+  const W=v.videoWidth,H=v.videoHeight, rw=W*.8, rh=H*.8, w=160, h=Math.max(40,Math.round(160*rh/rw));
+  cvG.width=w; cvG.height=h; cxG.drawImage(v,(W-rw)/2,(H-rh)/2,rw,rh,0,0,w,h);
+  const px=cxG.getImageData(0,0,w,h).data, g=new Uint8Array(w*h);
+  let sum=0;
+  for(let i=0,j=0;i<px.length;i+=4,j++){ const y=(px[i]*77+px[i+1]*150+px[i+2]*29)>>8; g[j]=y; sum+=y; }
+  let ls=0, ls2=0, n=0;
+  for(let y=1;y<h-1;y++) for(let x=1;x<w-1;x++){
+    const k=y*w+x, l=4*g[k]-g[k-1]-g[k+1]-g[k-w]-g[k+w]; ls+=l; ls2+=l*l; n++;
+  }
+  const mean=ls/n, sharp=ls2/n-mean*mean;
+  let motion=255;
+  if(SM.prev && SM.prev.length===g.length){ let d=0; for(let i=0;i<g.length;i++) d+=Math.abs(g[i]-SM.prev[i]); motion=d/g.length; }
+  SM.prev=g;
+  return {bright:sum/g.length, sharp, motion};
+}
+
+/* ---------- الجلسة ---------- */
+async function startSmart(cid){
+  if(!window.isSecureContext||!navigator.mediaDevices){ camHelp('insecure'); return; }
+  SM.cat=cid; S.set.smartCat=cid; saveMeta('set');
+  tone(1,1); // تفعيل الصوت بلمسة المستخدم
+  if(!await setupDetector()){ toast('هذا المتصفح لا يدعم قراءة الباركود'); return; }
+  try{
+    SM.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}});
+  }catch(e){ camHelp(e&&e.name); return; }
+  const v=$('#sv'); v.srcObject=SM.stream; try{ await v.play(); }catch(e){}
+  SM.track=SM.stream.getVideoTracks()[0];
+  const caps=SM.track.getCapabilities?SM.track.getCapabilities():{};
+  try{ await SM.track.applyConstraints({advanced:[{focusMode:'continuous'}]}); }catch(e){}
+  $('#smTorch').classList.toggle('hidden',!caps.torch); SM.torch=false;
+  $('#smart').classList.add('on'); history.pushState({smart:1},'');
+  smBar(); updateHud(); smLoop();
+}
+function stopSmart(){
+  SM.state='off'; clearTimeout(SM.timer);
+  if(SM.stream){ SM.stream.getTracks().forEach(t=>t.stop()); SM.stream=null; }
+  $('#sv').srcObject=null; $('#smart').classList.remove('on');
+}
+function smBar(){
+  SM.state='bar'; SM.cur=null; SM.cand=null;
+  $('#smFrame').className='sm-frame bar'; $('#smRing').style.width='0';
+  $('#smMsg').textContent='وجّه الكاميرا على الباركود'; $('#smSub').textContent='';
+  $('#smSkip').classList.add('hidden');
+  $('#smCat').textContent='📦 '+(catName(SM.cat)||'بدون تصنيف')+' ▾';
+}
+function smFace(code){
+  SM.state='face'; SM.cur={code}; SM.t0=performance.now(); SM.prev=null; SM.stableN=0; SM.barSeenAt=SM.t0; SM.maxSharp=0; SM.fc=0;
+  $('#smFrame').className='sm-frame face';
+  $('#smMsg').textContent='اقلب المنتج على وجهه'; $('#smSub').innerHTML='<span class="num">'+esc(code)+'</span>';
+  $('#smSkip').classList.remove('hidden');
+}
+async function smLoop(){
+  if(SM.state==='off') return;
+  const v=$('#sv');
+  if(v.readyState>=2 && v.videoWidth){
+    try{ if(SM.state==='bar') await smBarStep(v); else if(SM.state==='face') await smFaceStep(v); }catch(e){}
+  }
+  SM.timer=setTimeout(smLoop, SM.state==='face'?80:40);
+}
+async function smBarStep(v){
+  const hits=await detectOn(drawROI(v,.9,.55,720));
+  if(!hits.length) return;
+  const code=normCode(hits[0].raw,hits[0].fmt);
+  if(checkDigitOk(code)!==true) return;
+  const now=performance.now(), last=SM.recent.get(code);
+  if(last && now-last<4000){ SM.recent.set(code,now); return; }
+  if(SM.cand&&SM.cand.code===code) SM.cand.n++; else SM.cand={code,n:1};
+  const known=S.items.has(code)||Q.has(code);
+  if(SM.cand.n<(known?2:3)) return;                // تأكيد ذكي: 2 للموجود و3 للجديد
+  SM.cand=null; SM.recent.set(code,now);
+  if(S.items.has(code)){ sound('exists'); smLast('موجود مسبقاً: '+(S.items.get(code).name||code),'warn'); return; }
+  if(Q.has(code)){ sound('exists'); smLast('مصوَّر في هذه الجلسة','warn'); return; }
+  sound('ok'); smFace(code);
+}
+async function smFaceStep(v){
+  const now=performance.now(), el=now-SM.t0, sens=SENS[S.set.smartSens||'normal'];
+  const st=frameStats(v);
+  if(++SM.fc%3===0){
+    const hits=await detectOn(drawROI(v,.95,.95,640));
+    if(hits.some(h=>normCode(h.raw,h.fmt)===SM.cur.code)) SM.barSeenAt=now;
+  }
+  const barVisible=now-SM.barSeenAt<500;
+  const lightOk=st.bright>38 && st.bright<240;
+  // بعد 3 ثوانٍ تتساهل الشروط تدريجياً حتى لا تعلق اليد المرتجفة
+  const relax=Math.max(0,(el-3000)/3000);
+  const stable=st.motion<sens.m*(1+relax);
+  SM.stableN=stable?SM.stableN+1:0;
+  if(stable && el>500) SM.maxSharp=Math.max(SM.maxSharp,st.sharp);
+  const sharpOk=st.sharp>=Math.max(12,SM.maxSharp*Math.max(.55,.82-relax*.1));
+  let msg;
+  if(!lightOk) msg=st.bright<=38?'الإضاءة ضعيفة — شغّل الإضاءة':'الضوء قوي جداً — غيّر الزاوية';
+  else if(barVisible && el<2600) msg='اقلب المنتج على وجهه';
+  else if(!stable) msg='ثبّت المنتج قليلاً';
+  else if(!sharpOk) msg='قرّب أو ابعد قليلاً حتى تتضح الصورة';
+  else msg='ثابت… لحظة';
+  $('#smMsg').textContent=msg;
+  $('#smRing').style.width=Math.min(100,SM.stableN/sens.n*100)+'%';
+  const ready=el>700 && lightOk && SM.stableN>=sens.n && sharpOk && !(barVisible && el<2600);
+  if(ready){ await smCapture(v); return; }
+  if(el>15000){ await smQueue(SM.cur.code,null); sound('err'); smLast('لم تُلتقط صورة — صوّره من المراجعة','warn'); smBar(); }
+}
+function grabFull(v){
+  const W=v.videoWidth,H=v.videoHeight,k=Math.min(1,1280/Math.max(W,H)), c=document.createElement('canvas');
+  c.width=Math.round(W*k); c.height=Math.round(H*k); c.getContext('2d').drawImage(v,0,0,c.width,c.height);
+  return new Promise(r=>c.toBlob(b=>r(b),'image/jpeg',.82));
+}
+async function smCapture(v){
+  const code=SM.cur.code, blob=await grabFull(v);
+  sound('cap');
+  const f=$('#smFrame'); f.classList.add('hit'); setTimeout(()=>f.classList.remove('hit'),300);
+  await smQueue(code,blob);
+  smLast('✓ تم — المنتج التالي','ok');
+  SM.recent.set(code,performance.now());
+  smBar();
+}
+async function smQueue(code,blob){
+  if(blob){ await dbPut('photos',{barcode:code,blob}); S.photoKeys.add(code); dropThumb(code); }
+  const j={barcode:code,catId:SM.cat,status:blob?'wait':'nophoto',tries:0,at:0,createdAt:Date.now()};
+  Q.set(code,j); await dbPut('queue',j); updateHud(); pump();
+}
+function smLast(t,cls){ const l=$('#smLast'); l.textContent=t; l.className='sm-last on '+(cls||''); clearTimeout(l._h); l._h=setTimeout(()=>l.classList.remove('on'),1800); }
+function updateHud(){
+  let w=0,r=0,e=0; Q.forEach(j=>{ if(j.status==='wait'||j.status==='work') w++; else if(j.status==='ready') r++; else e++; });
+  const set=(id,v)=>{ const x=$(id); if(x) x.textContent=v; };
+  set('#smWork',w); set('#smReady',r); set('#smErr',e);
+  const rb=$('#revCount'); if(rb) rb.textContent=Q.size;
+}
+
+/* أزرار الشاشة */
+$('#smDone').onclick=()=>{ history.back(); setTimeout(()=>go('review'),150); };
+$('#smSkip').onclick=async()=>{ if(SM.state!=='face') return; await smQueue(SM.cur.code,null); smLast('تُرك بلا صورة','warn'); smBar(); };
+$('#smTorch').onclick=async()=>{ if(!SM.track) return; SM.torch=!SM.torch;
+  try{ await SM.track.applyConstraints({advanced:[{torch:SM.torch}]}); $('#smTorch').classList.toggle('on',SM.torch); }catch(e){ toast('الإضاءة غير مدعومة'); } };
+$('#smCat').onclick=()=>{
+  modal(`<h3>اختر التصنيف</h3><div class="catgrid">${S.cats.map(c=>`<div class="cat glass" data-c="${c.id}"><b>${esc(c.name)}</b><span><span class="num">${countIn(c.id)}</span> صنف</span></div>`).join('')}</div>
+    <div class="acts"><button class="btn ghost" id="cxNo">إغلاق</button></div>`,b=>{
+    b.querySelectorAll('.cat').forEach(x=>x.onclick=()=>{ SM.cat=x.dataset.c; S.set.smartCat=SM.cat; saveMeta('set'); closeModal(); smBar(); });
+    b.querySelector('#cxNo').onclick=closeModal;
+  });
+};
+document.addEventListener('visibilitychange',()=>{ if(document.hidden && SM.state!=='off'){ history.back(); } });
+
+/* ---------- المعالجة في الخلفية ---------- */
+let qRun=0;
+function pump(){
+  if(!cloudOn()||!navigator.onLine) return;
+  for(const j of Q.values()){
+    if(qRun>=2) break;
+    const due=j.status==='wait' || (j.status==='error' && j.tries<3 && Date.now()-j.at>j.tries*20000);
+    if(due) runJob(j);
+  }
+}
+setInterval(pump,15000);
+window.addEventListener('online',()=>{ pump(); cloudSync(); });
+function matchSub(catId,name){
+  const c=S.cats.find(c=>c.id===catId); if(!c||!name) return null;
+  const n=name.trim(); return (c.subs.find(s=>s.name===n)||c.subs.find(s=>s.name.includes(n)||n.includes(s.name))||{}).id||null;
+}
+async function runJob(j){
+  qRun++; j.status='work'; updateHud(); refreshReview();
+  try{
+    if(j.off===undefined) j.off=await offLookup(j.barcode);
+    const ph=await dbGet('photos',j.barcode);
+    if(!ph){ j.status='nophoto'; return; }
+    const cat=S.cats.find(c=>c.id===j.catId);
+    const body={barcode:j.barcode,image:await blobToB64(ph.blob),category:cat?cat.name:'',subs:cat?cat.subs.map(s=>s.name):[],off:j.off||null};
+    if(j.back) body.image2=await blobToB64(j.back);
+    const r=await api('analyze',body);
+    const a=r.result||{};
+    j.ai=a; j.model=r.model; j.status='ready'; j.err='';
+    j.d={name:a.name_ar||'',nameEn:a.name_en||'',brand:a.brand_ar||'',brandEn:a.brand_en||'',size:a.size||'',
+      unit:UNITS.includes(a.unit)?a.unit:'غرام',subId:matchSub(j.catId,a.sub_category),subSuggest:a.sub_category||'',country:a.country||''};
+  }catch(e){ j.status='error'; j.err=e.message; j.tries=(j.tries||0)+1; j.at=Date.now(); }
+  finally{ qRun--; if(Q.has(j.barcode)) await dbPut('queue',j); updateHud(); refreshReview(); pump(); }
+}
+
+/* ---------- شاشة اختيار التصنيف ---------- */
+function viewSmart(root){
+  $('#title').textContent='الجمع الذكي';
+  root.innerHTML=`
+    ${cloudOn()?'':`<div class="alert"><div class="grow"><b>اضبط الاتصال أولاً</b><div class="muted">أدخل رابط الوظيفة والرمز السري من الإعدادات حتى يعمل الذكاء الاصطناعي. التصوير يعمل الآن، والقراءة تبدأ بعد الضبط.</div></div><button class="btn sm violet" id="goSet">الإعدادات</button></div>`}
+    <div class="card glass"><b>طريقة العمل</b>
+      <ol class="muted" style="padding-inline-start:18px;margin:6px 0 0">
+        <li>اختر التصنيف (مثلاً الألبان) واجمع منتجاته فقط.</li>
+        <li>الكاميرا على الباركود ← صوت "تيت".</li>
+        <li>اقلب المنتج على وجهه وثبّته ← تُلتقط الصورة تلقائياً "تيت تيت".</li>
+        <li>المنتج التالي مباشرة. القراءة تعمل في الخلفية، وتراجع كل شيء في النهاية.</li>
+      </ol></div>
+    ${Q.size?`<button class="btn ok block" id="goRev" style="margin-bottom:12px">المراجعة (<span class="num" id="revCount">${Q.size}</span>)</button>`:''}
+    <h2>اختر التصنيف للبدء</h2>
+    <div class="catgrid">${S.cats.map(c=>`<div class="cat glass ${c.id===S.set.smartCat?'sel':''}" data-c="${c.id}"><b>${esc(c.name)}</b><span><span class="num">${countIn(c.id)}</span> صنف</span></div>`).join('')}</div>`;
+  const g=root.querySelector('#goSet'); if(g) g.onclick=()=>go('settings');
+  const r=root.querySelector('#goRev'); if(r) r.onclick=()=>go('review');
+  root.querySelectorAll('.cat').forEach(x=>x.onclick=()=>startSmart(x.dataset.c));
+}
+
+/* ---------- المراجعة ---------- */
+let revTimer=null;
+function refreshReview(){ if(cur()&&cur().name==='review'){ clearTimeout(revTimer); revTimer=setTimeout(()=>{ if(!document.activeElement||!document.activeElement.closest('.rv')) render(); },400); } }
+const flagged=j=>j.status==='ready' && (j.ai.needs_back || (j.ai.confidence??1)<0.6);
+function viewReview(root){
+  $('#title').textContent='مراجعة الجمع الذكي';
+  const jobs=[...Q.values()].sort((a,b)=>b.createdAt-a.createdAt);
+  const ready=jobs.filter(j=>j.status==='ready'&&!flagged(j)), fl=jobs.filter(flagged);
+  const busy=jobs.filter(j=>j.status==='wait'||j.status==='work').length;
+  if(!jobs.length){ root.innerHTML=`<div class="empty">لا يوجد شيء للمراجعة.<br><br><button class="btn aurora" id="goS">ابدأ الجمع الذكي</button></div>`; root.querySelector('#goS').onclick=()=>go('smart'); return; }
+  root.innerHTML=`
+    <div class="stats">
+      <div class="stat glass"><b class="num">${ready.length}</b><span>جاهزة</span></div>
+      <div class="stat glass"><b class="num">${fl.length}</b><span>تحتاج نظرة</span></div>
+      <div class="stat glass"><b class="num">${busy}</b><span>قيد القراءة</span></div>
+    </div>
+    ${!cloudOn()?'<div class="alert"><div class="grow">القراءة متوقفة: اضبط الاتصال من الإعدادات.</div></div>':''}
+    ${ready.length?`<button class="btn ok lg block" id="saveAll" style="margin-bottom:12px">حفظ الكل الجاهزة (<span class="num">${ready.length}</span>)</button>`:''}
+    <div id="rvList">${jobs.map(rvCard).join('')}</div>
+    <button class="btn aurora block" id="more" style="margin-top:6px">متابعة الجمع</button>`;
+  root.querySelector('#more').onclick=()=>{ go('smart'); };
+  const sa=root.querySelector('#saveAll'); if(sa) sa.onclick=async()=>{
+    let n=0; for(const j of ready){ if(await saveJob(j)) n++; }
+    await saveMeta('set'); toast(`تم حفظ ${n} صنف`); cloudSync(); render();
+  };
+  root.querySelectorAll('[data-t]').forEach(async t=>{ const u=await thumbURL(t.dataset.t); if(u) t.outerHTML=`<img class="thumb rvimg" src="${u}" alt="">`; });
+  root.querySelectorAll('.rv').forEach(card=>{
+    const j=Q.get(card.dataset.b); if(!j) return;
+    card.querySelectorAll('[data-f]').forEach(inp=>inp.onchange=async()=>{
+      const f=inp.dataset.f;
+      if(f==='subId' && inp.value==='__new__'){
+        const c=S.cats.find(c=>c.id===j.catId); const n=await ask(`تصنيف فرعي جديد في «${c?c.name:''}»`,j.d.subSuggest||'');
+        if(n&&c){ let s=c.subs.find(s=>s.name===n); if(!s){ s={id:uid(),name:n}; c.subs.push(s); await saveMeta('cats'); } j.d.subId=s.id; }
+        await dbPut('queue',j); render(); return;
+      }
+      j.d[f]=inp.value.trim(); await dbPut('queue',j);
+    });
+    card.querySelectorAll('[data-a]').forEach(b=>b.onclick=async()=>{
+      const a=b.dataset.a;
+      if(a==='save'){ if(await saveJob(j)){ await saveMeta('set'); toast('تم الحفظ'); cloudSync(); render(); } }
+      else if(a==='del'){ if(!await confirmBox('حذف','حذف هذا المنتج من المراجعة وصورته؟')) return;
+        Q.delete(j.barcode); await dbDel('queue',j.barcode);
+        if(!S.items.has(j.barcode) && S.photoKeys.has(j.barcode)){ await dbDel('photos',j.barcode); S.photoKeys.delete(j.barcode); dropThumb(j.barcode); }
+        updateHud(); render(); }
+      else if(a==='retry'){ j.status='wait'; j.tries=0; await dbPut('queue',j); pump(); render(); }
+      else if(a==='front'||a==='back'){
+        const p=$('#photoInput'); p.value='';
+        p.onchange=async()=>{ if(!p.files[0]) return;
+          try{ const blob=await compress(p.files[0]);
+            if(a==='front'){ await dbPut('photos',{barcode:j.barcode,blob}); S.photoKeys.add(j.barcode); dropThumb(j.barcode); }
+            else j.back=blob;
+            j.status='wait'; j.tries=0; await dbPut('queue',j); pump(); render(); toast('جارٍ القراءة من جديد…');
+          }catch(e){ toast('تعذّر قراءة الصورة'); } };
+        p.click();
+      }
+    });
+  });
+}
+function rvCard(j){
+  const thumb=`<div class="thumb" data-t="${esc(j.barcode)}">${IC.img}</div>`;
+  const head=`<div class="row">${thumb}<div class="grow"><small class="num muted">${esc(j.barcode)}</small><br><small class="muted">${esc(catName(j.catId)||'')}</small></div>`;
+  if(j.status==='wait'||j.status==='work') return `<div class="rv glass" data-b="${j.barcode}">${head}<span class="badge">⏳ ${j.status==='work'?'جارٍ القراءة':'بالانتظار'}</span></div></div>`;
+  if(j.status==='nophoto') return `<div class="rv glass" data-b="${j.barcode}">${head}<span class="badge warn">بلا صورة</span></div>
+    <div class="row" style="margin-top:8px"><button class="btn sm grow" data-a="front">${IC.cam}صوّر الوجه</button><button class="btn sm bad" data-a="del">${IC.del}</button></div></div>`;
+  if(j.status==='error') return `<div class="rv glass" data-b="${j.barcode}">${head}<span class="badge bad">⚠ خطأ</span></div>
+    <div class="muted" style="margin:6px 0">${esc(j.err||'')}</div>
+    <div class="row"><button class="btn sm grow" data-a="retry">إعادة المحاولة</button><button class="btn sm bad" data-a="del">${IC.del}</button></div></div>`;
+  const d=j.d, c=S.cats.find(c=>c.id===j.catId), a=j.ai||{};
+  const badges=[a.needs_back?'<span class="badge warn">يحتاج صورة الخلف</span>':'',(a.confidence??1)<0.6?'<span class="badge warn">ثقة منخفضة</span>':'',j.off?'<span class="badge">OFF</span>':''].join(' ');
+  return `<div class="rv glass ${flagged(j)?'flag':''}" data-b="${j.barcode}">${head}<div>${badges}</div></div>
+    ${a.note?`<div class="muted" style="margin:6px 0">ملاحظة: ${esc(a.note)}</div>`:''}
+    <div class="field"><label>الاسم بالعربي</label><input data-f="name" value="${esc(d.name)}"></div>
+    <div class="field"><label>الاسم بالإنجليزي</label><input data-f="nameEn" class="en" dir="ltr" value="${esc(d.nameEn)}"></div>
+    <div class="two">
+      <div class="field"><label>الماركة</label><input data-f="brand" value="${esc(d.brand)}"></div>
+      <div class="field"><label>Brand</label><input data-f="brandEn" dir="ltr" value="${esc(d.brandEn)}"></div>
+    </div>
+    <div class="two">
+      <div class="field"><label>الحجم</label><input data-f="size" inputmode="decimal" value="${esc(d.size)}"></div>
+      <div class="field"><label>الوحدة</label><select data-f="unit">${UNITS.map(u=>`<option ${u===d.unit?'selected':''}>${u}</option>`).join('')}</select></div>
+    </div>
+    <div class="field"><label>التصنيف الفرعي ${!d.subId&&d.subSuggest?`<span class="muted">(مقترح: ${esc(d.subSuggest)})</span>`:''}</label>
+      <select data-f="subId"><option value="">— اختر —</option>${c?c.subs.map(s=>`<option value="${s.id}" ${s.id===d.subId?'selected':''}>${esc(s.name)}</option>`).join(''):''}<option value="__new__">＋ تصنيف فرعي جديد…</option></select></div>
+    <div class="row"><button class="btn sm ok grow" data-a="save">✓ حفظ</button><button class="btn sm" data-a="back">${IC.cam}الخلف</button><button class="btn sm bad" data-a="del">${IC.del}</button></div>
+  </div>`;
+}
+async function saveJob(j){
+  const d=j.d; if(!d||!d.name){ toast('اكتب الاسم'); return false; }
+  const now=Date.now(), ex=S.items.get(j.barcode);
+  const rec={...(ex||{}),barcode:j.barcode,name:d.name,nameEn:d.nameEn,brand:d.brand,brandEn:d.brandEn,size:d.size,unit:d.unit,
+    catId:j.catId||null,subId:d.subId||null,price:ex?ex.price:null,country:d.country||(ex&&ex.country)||'',notes:ex?ex.notes:'',extra:ex?ex.extra:{},
+    src:'ai',ai:{model:j.model||'',conf:(j.ai||{}).confidence??null,off:!!j.off},createdAt:ex?ex.createdAt:now,updatedAt:now};
+  rec.hasPhoto=S.photoKeys.has(j.barcode);
+  await dbPut('items',rec); S.items.set(j.barcode,rec);
+  if(!ex) S.set.sinceExport++;
+  Q.delete(j.barcode); await dbDel('queue',j.barcode); updateHud();
+  return true;
+}
+
+/* ---------- السحابة ---------- */
+let syncing=false, cloudErr='';
+const synced=i=>i.cloudAt && i.cloudAt>=(i.updatedAt||0);
+async function cloudSync(){
+  if(syncing||!cloudOn()||!navigator.onLine) return;
+  syncing=true; cloudErr='';
+  try{
+    for(const it of [...S.items.values()]){
+      if(synced(it)) continue;
+      const body={item:{...it,catName:catName(it.catId),subName:subName(it.catId,it.subId)}};
+      delete body.item.cloudAt;
+      if(S.photoKeys.has(it.barcode)){ const p=await dbGet('photos',it.barcode); if(p) body.photo=await blobToB64(p.blob); }
+      await api('save',body,60000);
+      it.cloudAt=Date.now(); await dbPut('items',it); updateCloudChip();
+    }
+  }catch(e){ cloudErr=e.message; }
+  finally{ syncing=false; updateCloudChip(); }
+}
+function updateCloudChip(){
+  const el=$('#cloudChip'); if(!el) return;
+  if(!cloudOn()){ el.innerHTML='☁️ السحابة غير مضبوطة'; el.className='badge warn'; return; }
+  let n=0; S.items.forEach(i=>{ if(synced(i)) n++; });
+  el.innerHTML=`☁️ في السحابة <span class="num">${n}</span> من <span class="num">${S.items.size}</span>${syncing?' …':''}`;
+  el.className='badge '+(cloudErr?'bad':n===S.items.size?'ok':'warn');
+  el.title=cloudErr;
+}
+async function cloudRestore(){
+  let since=0, add=0, ph=0;
+  for(let round=0;round<50;round++){
+    const r=await api('list',{since});
+    const rows=r.rows||[]; if(!rows.length) break;
+    for(const row of rows){
+      since=Math.max(since,row.client_updated_at||0);
+      const ex=S.items.get(row.barcode);
+      if(ex && (ex.updatedAt||0)>=(row.client_updated_at||0)) continue;
+      let c=S.cats.find(c=>c.id===row.cat_id)||S.cats.find(c=>c.name===row.category);
+      if(!c && row.category){ c={id:row.cat_id||uid(),name:row.category,subs:[]}; S.cats.push(c); }
+      let s=c&&(c.subs.find(s=>s.id===row.sub_id)||c.subs.find(s=>s.name===row.sub_category));
+      if(c && !s && row.sub_category){ s={id:row.sub_id||uid(),name:row.sub_category}; c.subs.push(s); }
+      const it={barcode:row.barcode,name:row.name_ar||'',nameEn:row.name_en||'',brand:row.brand_ar||'',brandEn:row.brand_en||'',size:row.size||'',unit:row.unit||'غرام',
+        catId:c?c.id:null,subId:s?s.id:null,price:row.price,country:row.country||'',notes:row.notes||'',extra:row.extra||{},src:row.source||'',
+        createdAt:row.client_created_at||Date.now(),updatedAt:row.client_updated_at||Date.now()};
+      const url=row.photo_path&&r.photos[row.photo_path];
+      if(url){ try{ const b=await (await fetch(url)).blob(); await dbPut('photos',{barcode:row.barcode,blob:new Blob([b],{type:'image/jpeg'})}); S.photoKeys.add(row.barcode); dropThumb(row.barcode); ph++; }catch(e){} }
+      it.hasPhoto=S.photoKeys.has(row.barcode); it.cloudAt=Date.now();
+      await dbPut('items',it); S.items.set(it.barcode,it); add++;
+    }
+    if(rows.length<1000) break;
+  }
+  await saveMeta('cats');
+  return {add,ph};
+}
+function cloudCard(){
+  return `<div class="card glass">
+    <h2>الجمع الذكي والسحابة</h2>
+    <p class="muted">الرابط والرمز من دليل التركيب. المفتاح السري لـ Claude لا يُكتب هنا أبداً — هو محفوظ داخل الوظيفة على الخادم.</p>
+    <div class="field"><label>رابط الوظيفة</label><input id="cUrl" dir="ltr" placeholder="https://xxxx.supabase.co/functions/v1/smart-collect" value="${esc(S.set.cloudUrl||'')}"></div>
+    <div class="field"><label>الرمز السري</label><input id="cPin" type="password" value="${esc(S.set.cloudPin||'')}"></div>
+    <div class="field"><label>سرعة التصوير التلقائي</label><select id="cSens">
+      <option value="fast" ${S.set.smartSens==='fast'?'selected':''}>سريع (يلتقط أبكر)</option>
+      <option value="normal" ${(S.set.smartSens||'normal')==='normal'?'selected':''}>عادي</option>
+      <option value="strict" ${S.set.smartSens==='strict'?'selected':''}>دقيق (ينتظر ثباتاً أطول)</option></select></div>
+    <div class="two"><button class="btn ok" id="cSave">حفظ واختبار</button><button class="btn ghost" id="cUp">رفع الكل الآن</button></div>
+    <button class="btn ghost block" id="cDown" style="margin-top:10px">${IC.down}استرجاع المكتبة من السحابة</button>
+    <div class="muted" id="cMsg" style="margin-top:10px"><span id="cloudChip" class="badge"></span></div>
+  </div>`;
+}
+function bindCloudCard(){
+  updateCloudChip();
+  $('#cSens').onchange=async()=>{ S.set.smartSens=$('#cSens').value; await saveMeta('set'); };
+  $('#cSave').onclick=async()=>{
+    S.set.cloudUrl=$('#cUrl').value.trim(); S.set.cloudPin=$('#cPin').value.trim(); await saveMeta('set');
+    try{ const r=await api('ping',{},20000);
+      toast(r.hasKey?`متصل ✓ — النموذج ${r.model} — في السحابة ${r.count}`:'متصل، لكن مفتاح Claude غير موجود في الوظيفة');
+      pump(); cloudSync();
+    }catch(e){ toast('فشل الاتصال: '+e.message); }
+    updateCloudChip();
+  };
+  $('#cUp').onclick=()=>{ cloudSync(); toast('بدأ الرفع في الخلفية'); };
+  $('#cDown').onclick=async()=>{
+    if(!await confirmBox('استرجاع من السحابة','تُنزَّل الأصناف والصور من السحابة وتُدمج مع الموجود (الأحدث يُعتمد). متابعة؟',false)) return;
+    toast('جارٍ الاسترجاع…');
+    try{ const r=await cloudRestore(); toast(`تم: ${r.add} صنف و${r.ph} صورة`); render(); }catch(e){ toast('فشل: '+e.message); }
+  };
+}
+
 /* ================= التشغيل ================= */
 (async()=>{
   try{ await load(); }catch(e){ document.body.innerHTML='<p style="padding:20px">تعذّر فتح قاعدة البيانات في هذا المتصفح.</p>'; return; }
   stack=[{name:'home',params:{}}]; history.replaceState({d:1},''); render();
+  setTimeout(()=>{ pump(); cloudSync(); },1500);
   if('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(()=>{});
 })();
 </script>
